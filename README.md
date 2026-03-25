@@ -15,12 +15,12 @@ A lightweight Bash script designed to connect to a remote database server via an
 
 ## Setup & Configuration
 
-1. Copy the example environment file:
+### 1. Copy the example environment file:
    ```bash
    cp .env.example .env
    ```
    
-2. Edit your `.env` file with your local paths:
+### 2. Edit your `.env` file with your local paths:
    ```
    # Remote Database Configuration
    DB_HOST="000.000.00.000"
@@ -34,8 +34,34 @@ A lightweight Bash script designed to connect to a remote database server via an
    MAX_BACKUPS_TO_KEEP=5
 
    ```
+### 3. Manual execution with Arguments
 
-3. Make the script executtable:
+   You can override any setting without touching the .env file. This is useful for one-time backups or connecting to different envinroments.
+
+   | Argument | Description |
+   | :--- | :---: |
+   | --host | Remote database IP or DNS |
+   | --user| Remote SSH user (e.g. , admin, ubuntu) |
+   | --key | Path to your .pem private key |
+   | --storage-path | Absolute path to the remote storage folder |
+   | --no-storage | Skip the storage sync and perform only the DB dump |
+
+**Examples:**
+
+- Full backup (DB + Storage) using a specific key:
+   ```bash
+   ./backup.sh --host 00.000.000.00 --key ~/.ssh/my-key.pem --storage-path "/var/www/app/storage"
+   ```
+- Database-only backup (skipping storage):
+   ```bash
+   ./backup.sh --no-storage
+   ```
+- Quick test for a different DB user:
+   ```bash
+   ./backup.sh --user temporary-admin --host 1.2.3.4
+   ```
+
+### 4. Make the script executtable:
    ```bash
    chmod +x backup.sh
    ```
