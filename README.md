@@ -56,8 +56,12 @@ A lightweight Bash script designed to connect to a remote database server via an
    | --retention | Number of backups to keep |
    | --remote-storage | Absolute path to the remote storage folder |
    | --key | Path to your `.pem` private key |
+   | --ssh-password | SSH password used with `sshpass` authentication |
+   | --no-password | Use SSH agent/authorized_keys (no password prompt) |
    | --user | Remote SSH user (e.g. `admin`, `ubuntu`) |
    | --no-storage | Skip the storage sync and perform only the DB dump |
+
+> **Note:** For password authentication, the `sshpass` utility must be installed on your system (`sudo apt install sshpass` on Debian/Ubuntu).
 
 **Examples:**
 
@@ -72,6 +76,10 @@ A lightweight Bash script designed to connect to a remote database server via an
 - Quick test for a different DB user:
    ```bash
    ./backup.sh --db-host 1.2.3.4 --db-username temporary-admin
+   ```
+- Backup using password authentication
+   ```bash
+   ./backup.sh --db-host 1.2.3.4 --ssh-password "my-ssh-password"
    ```
    
 ## Usage

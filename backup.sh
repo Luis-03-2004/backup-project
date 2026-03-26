@@ -38,6 +38,8 @@ while [[ $# -gt 0 ]]; do
         --key)  PEM_KEY="$2"; shift 2 ;;
         --user) REMOTE_USER="$2"; shift 2 ;;
         --no-storage) SKIP_STORAGE=true; shift ;;
+        --ssh-password) SSH_PASSWORD="$2"; shift 2 ;;
+        --no-password) NO_PASSWORD=true; shift ;;
         *) shift ;;
     esac
 done
@@ -85,27 +87,47 @@ gzip -f "$DB_FILE"
 
 echo "DB Backup compressed and saved: ${DB_FILE}.gz"
 
-# 6. SSH Logic
-SSH_OPTS=""
-if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
-    SSH_OPTS="-i $PEM_KEY"
-    echo "Using PEM Key: $PEM_KEY"
-fi
-
-# 7. Storage Backup
+# 6. SSH & Storage Logic
 if [ "$SKIP_STORAGE" != true ]; then
+    echo "Preparing storage sync..."
+    
+    SCP_CMD="scp -r"
+    SSH_OPTS="-o BatchMode=no -o ConnectTimeout=10"
+
+    if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
+        # Option 1: PEM Key
+        echo "Using PEM Key for authentication."
+        SCP_CMD="$SCP_CMD -i $PEM_KEY $SSH_OPTS"
+    elif [ "$NO_PASSWORD" = true ]; then
+        # Option 2: No password (trust the SSH agent or authorized_keys)
+        echo "Attempting connection without password (NO_PASSWORD mode)."
+        SCP_CMD="$SCP_CMD $SSH_OPTS"
+    elif [ -n "$SSH_PASSWORD" ]; then
+        # Option 3: Password Using sshpass
+        if command -v sshpass >/dev/null 2>&1; then
+            echo "Using password authentication via sshpass."
+            SCP_CMD="sshpass -p "$SSH_PASSWORD" $SCP_CMD $SSH_OPTS"
+        else
+            echo "Error: SSH_PASSWORD provided but 'sshpass' is not installed."
+            exit 1
+        fi
+    else
+        echo "Error: No authentication method found (Key, Password, or --no-password)."
+        exit 1
+    fi
+
+    # Execution of the built command
     echo "Syncing Storage from: $REMOTE_STORAGE_PATH"
     LOCAL_TMP="$BACKUP_DESTINATION_DIR/storage/storage_${TIMESTAMP}"
     
-    # The actual SCP command
-    scp -r $SSH_OPTS "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$LOCAL_TMP"
+    $SCP_CMD "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$LOCAL_TMP"
     
     tar -czf "${LOCAL_TMP}.tar.gz" -C "$BACKUP_DESTINATION_DIR/storage" "storage_${TIMESTAMP}"
     rm -rf "$LOCAL_TMP"
     echo "Storage Backup saved: ${LOCAL_TMP}.tar.gz"
 fi
 
-# 8. Retention
+# 7. Retention
 echo "Cleaning old backups (Keeping: $MAX_BACKUPS_TO_KEEP)..."
 ls -dt "$BACKUP_DESTINATION_DIR/db/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
 ls -dt "$BACKUP_DESTINATION_DIR/storage/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
