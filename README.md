@@ -39,31 +39,32 @@ A lightweight Bash script designed to connect to a remote database server via an
    You can override any setting without touching the .env file. This is useful for one-time backups or connecting to different envinroments.
 
    | Argument | Description |
-   | :--- | :---: |
-   | --host | Remote database IP or DNS |
-   | --user| Remote SSH user (e.g. , admin, ubuntu) |
-   | --key | Path to your .pem private key |
-   | --storage-path | Absolute path to the remote storage folder |
+   | :--- | :--- |
+   | --db-host | Remote database host (IP or DNS) |
+   | --db-port | Remote database port |
+   | --db-database | Database name to dump |
+   | --db-username | Database username |
+   | --db-password | Database password |
+   | --backup-dir | Local backup destination directory |
+   | --retention | Number of backups to keep |
+   | --remote-storage | Absolute path to the remote storage folder |
+   | --key | Path to your `.pem` private key |
+   | --user | Remote SSH user (e.g. `admin`, `ubuntu`) |
    | --no-storage | Skip the storage sync and perform only the DB dump |
 
 **Examples:**
 
 - Full backup (DB + Storage) using a specific key:
    ```bash
-   ./backup.sh --host 00.000.000.00 --key ~/.ssh/my-key.pem --storage-path "/var/www/app/storage"
+   ./backup.sh --db-host 00.000.000.00 --key ~/.ssh/my-key.pem --remote-storage "/var/www/app/storage"
    ```
 - Database-only backup (skipping storage):
    ```bash
-   ./backup.sh --no-storage
+   ./backup.sh --db-host 00.000.000.00 --db-port 3306 --db-database app_db --db-username app_user --db-password "secret" --backup-dir "/tmp/backups" --retention 3 --user ubuntu --no-storage
    ```
 - Quick test for a different DB user:
    ```bash
-   ./backup.sh --user temporary-admin --host 1.2.3.4
-   ```
-
-### 4. Make the script executtable:
-   ```bash
-   chmod +x backup.sh
+   ./backup.sh --db-host 1.2.3.4 --db-username temporary-admin
    ```
    
 ## Usage
