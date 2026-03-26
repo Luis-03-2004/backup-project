@@ -4,7 +4,7 @@ A lightweight Bash script designed to connect to a remote database server via an
 
 ## Features
 - **Remote Connection:** Connects directly to any database host (e.g., AWS, local network servers) using Host, Port, and Credentials.
-- **Cross-Compatibility:** Includes flags (`--column-statistics=0`) to ensure compatibility when dumping from MariaDB servers using MySQL 8 clients.
+- **Smart Cross-Compatibility:** Automatically detects the environment to apply necessary flags like `--column-statistics=0` and `--hex-blob` , ensuring seamless backups between MySQL 8.0+ and MariaDB.
 - **Automated Compression:** Dumps are compressed on-the-fly using `gzip` (`.sql.gz`).
 - **Retention Policy:** Automatically deletes old backups, keeping only the most recent ones (configurable).
 
@@ -29,9 +29,16 @@ A lightweight Bash script designed to connect to a remote database server via an
    DB_USERNAME="db-user"
    DB_PASSWORD="your-strong-password"
 
+   # Remote SSH Configuration (for storage sync)
+   REMOTE_USER="ubuntu"
+   REMOTE_STORAGE_PATH="/var/www/app/storage"
+   PEM_KEY="/path/to/your/pem/key"
+
    # Local Destination & Retention
    BACKUP_DESTINATION_DIR="/path/to/your/local/dumps"
    MAX_BACKUPS_TO_KEEP=5
+
+   SKIP_STORAGE=false
 
    ```
 ### 3. Manual execution with Arguments
@@ -72,3 +79,8 @@ A lightweight Bash script designed to connect to a remote database server via an
   ```bash
   ./backup.sh
   ``` 
+## Restoration
+To restore a compressed database backup, you can use the following command:
+```bash
+zcat path/to/backup/dump_file.sql.gz | mysql -h localhost -u your_user -p your_database
+```

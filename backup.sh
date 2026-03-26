@@ -62,13 +62,18 @@ TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 mkdir -p "$BACKUP_DESTINATION_DIR/db"
 mkdir -p "$BACKUP_DESTINATION_DIR/storage"
 
+# 4. MySQL Compatibility Check (MySQL 8.0+ vs MariaDB)
+COLUMN_STATS=""
+if mysqldump --help | grep -q "column-statistics"; then
+    COLUMN_STATS="--column-statistics=0"
+fi
 
-# 4. Database Backup
+# 5. Database Backup
 echo "Starting Remote MySQL Dump..."
 DB_FILE="$BACKUP_DESTINATION_DIR/db/dump_${DB_DATABASE}_${TIMESTAMP}.sql"
 
 mysqldump -h "$DB_HOST" -P "${DB_PORT}" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-    --column-statistics=0 --skip-lock-tables "$DB_DATABASE" > "$DB_FILE" || exit 1
+    $COLUMN_STATS --skip-lock-tables --hex-blob "$DB_DATABASE" > "$DB_FILE" || exit 1
 
 if [ ! -s "$DB_FILE" ]; then
     echo "Error: DB backup failed."
@@ -80,14 +85,14 @@ gzip -f "$DB_FILE"
 
 echo "DB Backup compressed and saved: ${DB_FILE}.gz"
 
-# 5. SSH Logic
+# 6. SSH Logic
 SSH_OPTS=""
 if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
     SSH_OPTS="-i $PEM_KEY"
     echo "Using PEM Key: $PEM_KEY"
 fi
 
-# 6. Storage Backup
+# 7. Storage Backup
 if [ "$SKIP_STORAGE" != true ]; then
     echo "Syncing Storage from: $REMOTE_STORAGE_PATH"
     LOCAL_TMP="$BACKUP_DESTINATION_DIR/storage/storage_${TIMESTAMP}"
@@ -100,7 +105,7 @@ if [ "$SKIP_STORAGE" != true ]; then
     echo "Storage Backup saved: ${LOCAL_TMP}.tar.gz"
 fi
 
-# 7. Retention
+# 8. Retention
 echo "Cleaning old backups (Keeping: $MAX_BACKUPS_TO_KEEP)..."
 ls -dt "$BACKUP_DESTINATION_DIR/db/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
 ls -dt "$BACKUP_DESTINATION_DIR/storage/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
