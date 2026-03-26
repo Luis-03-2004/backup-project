@@ -3,6 +3,17 @@
 # Exit the script if any command fails
 set -e
 
+# Validate required variables
+validate_required() {
+    local var_value=$1
+    local var_name=$2
+    
+    if [ -z "$var_value" ]; then
+        echo "Error: Required variable '$var_name' is missing."
+        exit 1
+    fi
+}
+
 # 1. Load configuration from .env
 if [ -f .env ]; then
     # Use a more stable way to export .env variables
@@ -16,10 +27,16 @@ fi
 # This way, the argument parser only overwrites if a flag is passed.
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --host) DB_HOST="$2"; shift 2 ;;
-        --user) REMOTE_USER="$2"; shift 2 ;;
+        --db-host) DB_HOST="$2"; shift 2 ;;
+        --db-port) DB_PORT="$2"; shift 2 ;;
+        --db-database) DB_DATABASE="$2"; shift 2 ;;
+        --db-username) DB_USERNAME="$2"; shift 2 ;;
+        --db-password) DB_PASSWORD="$2"; shift 2 ;;
+        --backup-dir) BACKUP_DESTINATION_DIR="$2"; shift 2 ;;
+        --retention) MAX_BACKUPS_TO_KEEP="$2"; shift 2 ;;
+        --remote-storage) REMOTE_STORAGE_PATH="$2"; shift 2 ;;
         --key)  PEM_KEY="$2"; shift 2 ;;
-        --storage-path) REMOTE_STORAGE_PATH="$2"; shift 2 ;;
+        --user) REMOTE_USER="$2"; shift 2 ;;
         --no-storage) SKIP_STORAGE=true; shift ;;
         *) shift ;;
     esac
@@ -27,60 +44,65 @@ done
 
 # 3. Validation & Setup
 # We use the variable if it exists, otherwise we fail.
-TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-FINAL_BACKUP_DIR="${BACKUP_DESTINATION_DIR}"
-FINAL_MAX_RETAIN="${MAX_BACKUPS_TO_KEEP}"
-FINAL_STORAGE_PATH="${REMOTE_STORAGE_PATH}"
+validate_required "$DB_HOST" "DB_HOST"
+validate_required "$DB_PORT" "DB_PORT"
+validate_required "$DB_DATABASE" "DB_DATABASE"
+validate_required "$DB_USERNAME" "DB_USERNAME"
+validate_required "$DB_PASSWORD" "DB_PASSWORD"
+validate_required "$BACKUP_DESTINATION_DIR" "BACKUP_DESTINATION_DIR"
+validate_required "$MAX_BACKUPS_TO_KEEP" "MAX_BACKUPS_TO_KEEP"
+validate_required "$REMOTE_USER" "REMOTE_USER"
 
-if [ -z "$FINAL_BACKUP_DIR" ] || [ -z "$FINAL_MAX_RETAIN" ]; then
-    echo "Error: BACKUP_DESTINATION_DIR or MAX_BACKUPS_TO_KEEP is missing."
+if [ "$SKIP_STORAGE" != true ]; then
+    validate_required "$REMOTE_STORAGE_PATH" "REMOTE_STORAGE_PATH"
+fi
+
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+
+mkdir -p "$BACKUP_DESTINATION_DIR/db"
+mkdir -p "$BACKUP_DESTINATION_DIR/storage"
+
+
+# 4. Database Backup
+echo "Starting Remote MySQL Dump..."
+DB_FILE="$BACKUP_DESTINATION_DIR/db/dump_${DB_DATABASE}_${TIMESTAMP}.sql"
+
+mysqldump -h "$DB_HOST" -P "${DB_PORT}" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
+    --column-statistics=0 --skip-lock-tables "$DB_DATABASE" > "$DB_FILE" || exit 1
+
+if [ ! -s "$DB_FILE" ]; then
+    echo "Error: DB backup failed."
     exit 1
 fi
 
-mkdir -p "$FINAL_BACKUP_DIR/db"
-mkdir -p "$FINAL_BACKUP_DIR/storage"
+echo "Compressing dump file..."
+gzip -f "$DB_FILE"
 
-# 4. SSH Logic
+echo "DB Backup compressed and saved: ${DB_FILE}.gz"
+
+# 5. SSH Logic
 SSH_OPTS=""
 if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
     SSH_OPTS="-i $PEM_KEY"
     echo "Using PEM Key: $PEM_KEY"
 fi
 
-# 5. Database Backup
-echo "Starting Remote MySQL Dump..."
-DB_FILE="$FINAL_BACKUP_DIR/db/dump_${DB_DATABASE}_${TIMESTAMP}.sql.gz"
-
-mysqldump -h "$DB_HOST" -P "${DB_PORT}" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-    --column-statistics=0 --skip-lock-tables "$DB_DATABASE" | gzip > "$DB_FILE"
-
-if [ ! -s "$DB_FILE" ]; then
-    echo "Error: DB backup failed."
-    exit 1
-fi
-echo "DB Backup saved: $DB_FILE"
-
 # 6. Storage Backup
 if [ "$SKIP_STORAGE" != true ]; then
-    if [ -z "$FINAL_STORAGE_PATH" ]; then
-        echo "Error: REMOTE_STORAGE_PATH is not defined."
-        exit 1
-    fi
-
-    echo "Syncing Storage from: $FINAL_STORAGE_PATH"
-    LOCAL_TMP="$FINAL_BACKUP_DIR/storage/storage_${TIMESTAMP}"
+    echo "Syncing Storage from: $REMOTE_STORAGE_PATH"
+    LOCAL_TMP="$BACKUP_DESTINATION_DIR/storage/storage_${TIMESTAMP}"
     
     # The actual SCP command
-    scp -r $SSH_OPTS "$REMOTE_USER@$DB_HOST:$FINAL_STORAGE_PATH" "$LOCAL_TMP"
+    scp -r $SSH_OPTS "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$LOCAL_TMP"
     
-    tar -czf "${LOCAL_TMP}.tar.gz" -C "$FINAL_BACKUP_DIR/storage" "storage_${TIMESTAMP}"
+    tar -czf "${LOCAL_TMP}.tar.gz" -C "$BACKUP_DESTINATION_DIR/storage" "storage_${TIMESTAMP}"
     rm -rf "$LOCAL_TMP"
     echo "Storage Backup saved: ${LOCAL_TMP}.tar.gz"
 fi
 
 # 7. Retention
-echo "Cleaning old backups (Keeping: $FINAL_MAX_RETAIN)..."
-ls -dt "$FINAL_BACKUP_DIR/db/"* 2>/dev/null | tail -n +$((FINAL_MAX_RETAIN + 1)) | xargs -r rm -rf || true
-ls -dt "$FINAL_BACKUP_DIR/storage/"* 2>/dev/null | tail -n +$((FINAL_MAX_RETAIN + 1)) | xargs -r rm -rf || true
+echo "Cleaning old backups (Keeping: $MAX_BACKUPS_TO_KEEP)..."
+ls -dt "$BACKUP_DESTINATION_DIR/db/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
+ls -dt "$BACKUP_DESTINATION_DIR/storage/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
 
 echo "Process finished successfully!"
