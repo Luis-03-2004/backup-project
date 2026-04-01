@@ -40,7 +40,6 @@ while [[ $# -gt 0 ]]; do
         --no-storage) SKIP_STORAGE=true; shift ;;
         --ssh-password) SSH_PASSWORD="$2"; shift 2 ;;
         --no-password) NO_PASSWORD=true; shift ;;
-        --skip-ssl) SKIP_SSL=true; shift ;;
         *) shift ;;
     esac
 done
@@ -79,14 +78,11 @@ fi
 
 # 5. Database Backup
 
-SSL_FLAG=""
-[ "$SKIP_SSL" = true ] && SSL_FLAG="--skip-ssl"
-
 echo "Starting Remote MySQL Dump..."
 DB_FILE="$BACKUP_DESTINATION_DIR/db/dump_${DB_DATABASE}_${TIMESTAMP}.sql"
 
 mysqldump -h "$DB_HOST" -P "${DB_PORT}" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-    $COLUMN_STATS $SSL_FLAG --skip-lock-tables --hex-blob "$DB_DATABASE" > "$DB_FILE" || exit 1
+    $COLUMN_STATS --skip-ssl --skip-lock-tables --hex-blob "$DB_DATABASE" > "$DB_FILE" || exit 1
 
 if [ ! -s "$DB_FILE" ]; then
     rm "$DB_FILE"

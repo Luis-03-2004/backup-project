@@ -60,7 +60,6 @@ A lightweight Bash script designed to connect to a remote database server via an
    | --no-password | Use SSH agent/authorized_keys (no password prompt) |
    | --user | Remote SSH user (e.g. `admin`, `ubuntu`) |
    | --no-storage | Skip the storage sync and perform only the DB dump |
-   | --skip-ssl | Disables SSL for database connection (useful for servers without SSL) |
 
 > **Note:** For password authentication, the `sshpass` utility must be installed on your system (`sudo apt install sshpass` on Debian/Ubuntu).
 
