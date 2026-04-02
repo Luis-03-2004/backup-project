@@ -76,10 +76,18 @@ for entry in "$BACKUP_DESTINATION_DIR/storage"/storage_*; do
     [ -d "$entry" ] && rm -rf "$entry"
 done 2>/dev/null || true
 
-# 4. MySQL Compatibility Check (MySQL 8.0+ vs MariaDB)
+# 4. MySQL / MariaDB client compatibility (options vary by version)
 COLUMN_STATS=""
-if mysqldump --help | grep -q "column-statistics"; then
+if mysqldump --help 2>/dev/null | grep -q "column-statistics"; then
     COLUMN_STATS="--column-statistics=0"
+fi
+
+# Prefer legacy --skip-ssl; newer MySQL clients use --ssl-mode=DISABLED instead
+DUMP_SSL_SKIP=""
+if mysqldump --help 2>/dev/null | grep -q -- '--skip-ssl'; then
+    DUMP_SSL_SKIP="--skip-ssl"
+elif mysqldump --help 2>/dev/null | grep -q -- '--ssl-mode'; then
+    DUMP_SSL_SKIP="--ssl-mode=DISABLED"
 fi
 
 # 5. Database Backup
@@ -88,7 +96,7 @@ echo "Starting Remote MySQL Dump..."
 DB_FILE="$BACKUP_DESTINATION_DIR/db/dump_${DB_DATABASE}_${TIMESTAMP}.sql"
 
 mysqldump -h "$DB_HOST" -P "${DB_PORT}" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-    $COLUMN_STATS --skip-ssl --skip-lock-tables --hex-blob "$DB_DATABASE" > "$DB_FILE" || exit 1
+    $COLUMN_STATS $DUMP_SSL_SKIP --skip-lock-tables --hex-blob "$DB_DATABASE" > "$DB_FILE" || exit 1
 
 if [ ! -s "$DB_FILE" ]; then
     rm "$DB_FILE"
