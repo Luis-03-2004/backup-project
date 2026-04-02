@@ -17,6 +17,8 @@ validate_required() {
 }
 
 # 1. Load configuration from .env
+cd "$(dirname "$0")"
+
 if [ -f .env ]; then
     # Use a more stable way to export .env variables
     set -a
@@ -105,7 +107,7 @@ if [ "$SKIP_STORAGE" != true ]; then
     SCP_CMD="scp -r"
     SSH_OPTS="-o BatchMode=no -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
 
-    if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
+    if [ -n "$PEM_KEY" ] && [ -f $PEM_KEY ]; then
         # Option 1: PEM Key
         echo "Using PEM Key for authentication."
         SCP_CMD="$SCP_CMD -i $PEM_KEY $SSH_OPTS"
