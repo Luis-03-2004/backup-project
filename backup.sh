@@ -8,8 +8,10 @@ validate_required() {
     local var_value=$1
     local var_name=$2
     local var_flag=$3
+    local hint=${4:-}
     if [ -z "$var_value" ]; then
-        echo "Error: Required variable '$var_name' is missing. edit '.env' setting '$var_name' or use inline command with '$var_flag'"
+        echo "Error: Required variable '$var_name' is missing. edit '.env' setting '$var_name' or use inline command with '$var_flag'."
+        [ -n "$hint" ] && echo "$hint"
         exit 1
     fi
 }
@@ -54,9 +56,11 @@ validate_required "$DB_PASSWORD" "DB_PASSWORD" "--db-password"
 validate_required "$BACKUP_DESTINATION_DIR" "BACKUP_DESTINATION_DIR" "--backup-dir"
 validate_required "$MAX_BACKUPS_TO_KEEP" "MAX_BACKUPS_TO_KEEP" "--retention"
 
+STORAGE_OPTIONAL_HINT="Note: Remote folder backup is optional; disable it with the --no-storage flag."
+
 if [ "$SKIP_STORAGE" != true ]; then
-    validate_required "$REMOTE_STORAGE_PATH" "REMOTE_STORAGE_PATH" "--remote-storage"
-    validate_required "$REMOTE_USER" "REMOTE_USER" "--user"
+    validate_required "$REMOTE_STORAGE_PATH" "REMOTE_STORAGE_PATH" "--remote-storage" "$STORAGE_OPTIONAL_HINT"
+    validate_required "$REMOTE_USER" "REMOTE_USER" "--user" "$STORAGE_OPTIONAL_HINT"
 fi
 
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
