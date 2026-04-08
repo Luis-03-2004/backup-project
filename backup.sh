@@ -16,6 +16,51 @@ validate_required() {
     fi
 }
 
+print_cli_help() {
+    cat <<'EOF'
+Usage: ./backup.sh [OPTION]...
+
+Override .env values or pass one-off settings. Boolean flags take no value.
+
+Database (remote mysqldump):
+  --db-host HOST           Remote database hostname or IP
+  --db-port PORT           Remote database port (e.g. 3306)
+  --db-database NAME       Database name to dump
+  --db-username USER       Database user
+  --db-password PASS       Database password
+
+Local backup output:
+  --backup-dir PATH        Directory for backup_*.tar.gz archives
+  --retention N            Keep at most N unified backup archives
+
+Remote storage (SSH / scp; skipped if --no-storage):
+  --remote-storage PATH    Absolute path to remote folder to copy
+  --user USER              Remote SSH user (e.g. ubuntu, root)
+  --key PATH               Path to PEM private key for SSH
+  --ssh-password PASS      SSH password (requires sshpass)
+  --no-password            Use SSH agent or passwordless authorized_keys
+  --no-storage             Skip storage sync; database dump only
+
+Other:
+  --help, -h               Show this help and exit
+
+Defaults come from .env in the script directory when not passed on the CLI.
+See README.md for restoration and PEM/sudo notes.
+EOF
+}
+
+# Unknown CLI tokens (typos or unsupported flags) must not be silently ignored
+fail_unknown_cli_arg() {
+    local arg=$1
+    if [[ "$arg" == -* ]]; then
+        echo "Error: Unknown option '$arg'. Check for typos." >&2
+    else
+        echo "Error: Unexpected argument '$arg'. This script only accepts --flags, not positional parameters." >&2
+    fi
+    echo "Use --help for a list of supported flags." >&2
+    exit 1
+}
+
 run_storage_scp() {
     local dest_dir=$1
     if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
@@ -70,6 +115,7 @@ fi
 # This way, the argument parser only overwrites if a flag is passed.
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --help|-h) print_cli_help; exit 0 ;;
         --db-host) DB_HOST="$2"; shift 2 ;;
         --db-port) DB_PORT="$2"; shift 2 ;;
         --db-database) DB_DATABASE="$2"; shift 2 ;;
@@ -83,7 +129,7 @@ while [[ $# -gt 0 ]]; do
         --no-storage) SKIP_STORAGE=true; shift ;;
         --ssh-password) SSH_PASSWORD="$2"; shift 2 ;;
         --no-password) NO_PASSWORD=true; shift ;;
-        *) shift ;;
+        *) fail_unknown_cli_arg "$1" ;;
     esac
 done
 

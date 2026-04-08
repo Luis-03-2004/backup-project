@@ -7,6 +7,7 @@ A lightweight Bash script designed to connect to a remote database server via an
 - **Smart Cross-Compatibility:** Automatically detects the environment to apply necessary flags like `--column-statistics=0` and `--hex-blob` , ensuring seamless backups between MySQL 8.0+ and MariaDB.
 - **Unified backup archives:** Each run produces one `backup_<timestamp>.tar.gz` in your backup directory. Inside: the database dump as a `.sql` file and, when storage sync is enabled, the remote storage tree under `storage/`. DB and storage for that run stay paired, and retention applies to these archives only.
 - **Retention Policy:** Automatically deletes older `backup_*.tar.gz` files, keeping only the most recent ones (configurable).
+- **CLI help & strict parsing:** Run `--help` or `-h` to print every supported flag. Unknown or mistyped flags exit with an error and suggest `--help` instead of being ignored.
 
 ## Prerequisites
 - `bash`
@@ -60,6 +61,9 @@ A lightweight Bash script designed to connect to a remote database server via an
    | --no-password | Use SSH agent/authorized_keys (no password prompt) |
    | --user | Remote SSH user (e.g. `admin`, `ubuntu`) |
    | --no-storage | Skip the storage sync and perform only the DB dump |
+   | `--help`, `-h` | Print all supported flags and exit (no backup run) |
+
+**`--help` / `-h`:** Prints grouped descriptions of every CLI flag (database, local paths, SSH/storage, booleans). No `.env` validation or backup runs—safe to use anytime. If you pass an unknown option (e.g. a typo), the script exits with an error and tells you to use `--help` for the full list.
 
 > **Note:** For password authentication, the `sshpass` utility must be installed on your system (`sudo apt install sshpass` on Debian/Ubuntu).
 
@@ -67,6 +71,11 @@ A lightweight Bash script designed to connect to a remote database server via an
 
 **Examples:**
 
+- Show all supported flags:
+   ```bash
+   ./backup.sh --help
+   # or: ./backup.sh -h
+   ```
 - Full backup (DB + Storage) using a specific key:
    ```bash
    sudo ./backup.sh --db-host 00.000.000.00 --key /home/you/.ssh/my-key.pem --remote-storage "/var/www/app/storage"
@@ -88,6 +97,10 @@ A lightweight Bash script designed to connect to a remote database server via an
 - Run the script manually (from the project directory, or after `cd` there—see script behavior):
   ```bash
   ./backup.sh
+  ```
+- List flags and options without running a backup:
+  ```bash
+  ./backup.sh --help
   ```
 - For **storage sync with a PEM key**, prefer **`sudo ./backup.sh`** so private key permissions stay strict; see the note above.
 
