@@ -16,11 +16,50 @@ validate_required() {
     fi
 }
 
+run_storage_scp() {
+    local dest_dir=$1
+    if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
+        echo "Using PEM Key for authentication."
+        scp -r $SSH_OPTS -i "$PEM_KEY" \
+            "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
+    elif [ "$NO_PASSWORD" = true ]; then
+        echo "Attempting connection without password (NO_PASSWORD mode)."
+        scp -r $SSH_OPTS \
+            "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
+    elif [ -n "$SSH_PASSWORD" ]; then
+        if command -v sshpass >/dev/null 2>&1; then
+            echo "Using password authentication via sshpass."
+            SSHPASS="$SSH_PASSWORD" sshpass -e scp -r $SSH_OPTS \
+                "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
+        else
+            echo "Error: 'sshpass' is not installed, but password auth was requested."
+            echo "Provide one of the options below:"
+            echo "  - ENV: SSH_PASSWORD=your-password | PARAM: --ssh-password your-password"
+            echo "  - ENV: PEM_KEY=/path/to/key.pem   | PARAM: --key /path/to/key.pem"
+            echo "  - ENV: NO_PASSWORD=true           | PARAM: --no-password"
+            rm -rf "$WORK"
+            exit 1
+        fi
+    else
+        echo "Error: No authentication method found for storage sync."
+        echo "Provide one of the options below:"
+        echo "  1) PEM key:"
+        echo "     ENV: PEM_KEY=/path/to/key.pem"
+        echo "     PARAM: --key /path/to/key.pem"
+        echo "  2) SSH password (requires sshpass):"
+        echo "     ENV: SSH_PASSWORD=your-password"
+        echo "     PARAM: --ssh-password your-password"
+        echo "  3) Passwordless SSH (ssh-agent/authorized_keys):"
+        echo "     ENV: NO_PASSWORD=true"
+        echo "     PARAM: --no-password"
+        rm -rf "$WORK"
+        exit 1
+    fi
+}
 # 1. Load configuration from .env
 cd "$(dirname "$0")"
 
 if [ -f .env ]; then
-    # Use a more stable way to export .env variables
     set -a
     source .env
     set +a
@@ -67,12 +106,10 @@ fi
 
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 
-mkdir -p "$BACKUP_DESTINATION_DIR/db"
-mkdir -p "$BACKUP_DESTINATION_DIR/storage"
+mkdir -p "$BACKUP_DESTINATION_DIR"
 
-# Cleanup leftovers from previous interrupted runs (only dirs; keep .tar.gz)
-rm -f "$BACKUP_DESTINATION_DIR/db/"*.sql 2>/dev/null || true
-for entry in "$BACKUP_DESTINATION_DIR/storage"/storage_*; do
+# Remove incomplete staging dirs from interrupted runs
+for entry in "$BACKUP_DESTINATION_DIR"/.work_*; do
     [ -d "$entry" ] && rm -rf "$entry"
 done 2>/dev/null || true
 
@@ -90,86 +127,50 @@ elif mysqldump --help 2>/dev/null | grep -q -- '--ssl-mode'; then
     DUMP_SSL_SKIP="--ssl-mode=DISABLED"
 fi
 
-# 5. Database Backup
+WORK="$BACKUP_DESTINATION_DIR/.work_${TIMESTAMP}"
+mkdir -p "$WORK"
 
+# 5. Storage sync (uncompressed tree under WORK/storage/)
+SSH_OPTS="-o BatchMode=no -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+
+
+if [ "$SKIP_STORAGE" != true ]; then
+    echo "Preparing storage sync..."
+    mkdir -p "$WORK/storage"
+    echo "Syncing Storage from: $REMOTE_STORAGE_PATH"
+    run_storage_scp "$WORK/storage/"
+    if [ -z "$(ls -A "$WORK/storage" 2>/dev/null)" ]; then
+        rm -rf "$WORK"
+        echo "Error: storage sync failed or remote folder is empty."
+        exit 1
+    fi
+fi
+
+# 6. Database dump (plain .sql inside WORK; archived together with storage in one .tar.gz)
 echo "Starting Remote MySQL Dump..."
-DB_FILE="$BACKUP_DESTINATION_DIR/db/dump_${DB_DATABASE}_${TIMESTAMP}.sql"
+DB_FILE="$WORK/dump_${DB_DATABASE}_${TIMESTAMP}.sql"
 
 mysqldump -h "$DB_HOST" -P "${DB_PORT}" -u "$DB_USERNAME" -p"$DB_PASSWORD" \
-    $COLUMN_STATS $DUMP_SSL_SKIP --skip-lock-tables --hex-blob "$DB_DATABASE" > "$DB_FILE" || exit 1
+    $COLUMN_STATS $DUMP_SSL_SKIP --skip-lock-tables --hex-blob "$DB_DATABASE" > "$DB_FILE" || {
+    rm -rf "$WORK"
+    exit 1
+}
 
 if [ ! -s "$DB_FILE" ]; then
-    rm "$DB_FILE"
+    rm -rf "$WORK"
     echo "Error: DB backup failed."
     exit 1
 fi
 
-echo "Compressing dump file..."
-gzip -f "$DB_FILE"
+BACKUP_ARCHIVE="$BACKUP_DESTINATION_DIR/backup_${TIMESTAMP}.tar.gz"
+echo "Creating unified backup archive..."
+tar -czf "$BACKUP_ARCHIVE" -C "$WORK" .
+rm -rf "$WORK"
 
-echo "DB Backup compressed and saved: ${DB_FILE}.gz"
+echo "Backup saved: $BACKUP_ARCHIVE"
 
-# 6. SSH & Storage Logic
-if [ "$SKIP_STORAGE" != true ]; then
-    echo "Preparing storage sync..."
-    SCP_CMD="scp -r"
-    SSH_OPTS="-o BatchMode=no -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
-
-    if [ -n "$PEM_KEY" ] && [ -f $PEM_KEY ]; then
-        # Option 1: PEM Key
-        echo "Using PEM Key for authentication."
-        SCP_CMD="$SCP_CMD -i $PEM_KEY $SSH_OPTS"
-    elif [ "$NO_PASSWORD" = true ]; then
-        # Option 2: No password (trust the SSH agent or authorized_keys)
-        echo "Attempting connection without password (NO_PASSWORD mode)."
-        SCP_CMD="$SCP_CMD $SSH_OPTS"
-    elif [ -n "$SSH_PASSWORD" ]; then
-        # Option 3: Password Using sshpass
-        if command -v sshpass >/dev/null 2>&1; then
-            echo "Using password authentication via sshpass."
-            SCP_CMD="sshpass -p "$SSH_PASSWORD" $SCP_CMD $SSH_OPTS"
-        else
-            echo "Error: 'sshpass' is not installed, but password auth was requested."
-            echo "Provide one of the options below:"
-            echo "  - ENV: SSH_PASSWORD=your-password | PARAM: --ssh-password your-password"
-            echo "  - ENV: PEM_KEY=/path/to/key.pem   | PARAM: --key /path/to/key.pem"
-            echo "  - ENV: NO_PASSWORD=true           | PARAM: --no-password"
-            exit 1
-        fi
-    else
-        echo "Error: No authentication method found for storage sync."
-        echo "Provide one of the options below:"
-        echo "  1) PEM key:"
-        echo "     ENV: PEM_KEY=/path/to/key.pem"
-        echo "     PARAM: --key /path/to/key.pem"
-        echo "  2) SSH password (requires sshpass):"
-        echo "     ENV: SSH_PASSWORD=your-password"
-        echo "     PARAM: --ssh-password your-password"
-        echo "  3) Passwordless SSH (ssh-agent/authorized_keys):"
-        echo "     ENV: NO_PASSWORD=true"
-        echo "     PARAM: --no-password"
-        exit 1
-    fi
-
-    # Execution of the built command
-    echo "Syncing Storage from: $REMOTE_STORAGE_PATH"
-    LOCAL_TMP="$BACKUP_DESTINATION_DIR/storage/storage_${TIMESTAMP}"
-    mkdir -p "$LOCAL_TMP"
-    $SCP_CMD "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$LOCAL_TMP" || true
-
-    if [ ! -n "$(ls $LOCAL_TMP)" ]; then
-       rm -rf "$LOCAL_TMP"
-       echo "Error with scp command"
-       exit 1
-    fi
-
-    tar -czf "${LOCAL_TMP}.tar.gz" -C "$BACKUP_DESTINATION_DIR/storage" "storage_${TIMESTAMP}"
-    rm -rf "$LOCAL_TMP"
-    echo "Storage Backup saved: ${LOCAL_TMP}.tar.gz"
-fi
-
-# 7. Retention
+# 7. Retention (one counter per unified backup file)
 echo "Cleaning old backups (Keeping: $MAX_BACKUPS_TO_KEEP)..."
-ls -dt "$BACKUP_DESTINATION_DIR/db/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
-ls -dt "$BACKUP_DESTINATION_DIR/storage/"* 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -rf || true
+ls -dt "$BACKUP_DESTINATION_DIR"/backup_*.tar.gz 2>/dev/null | tail -n +$((MAX_BACKUPS_TO_KEEP + 1)) | xargs -r rm -f || true
+
 echo "Process finished successfully!"
