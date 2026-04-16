@@ -58,6 +58,7 @@ A lightweight Bash script designed to connect to a remote database server via an
    | --remote-storage | Absolute path to the remote storage folder |
    | --key | Path to your `.pem` private key |
    | --ssh-password | SSH password used with `sshpass` authentication |
+   | --ssh-port | SSH port (default: 22) |
    | --no-password | Use SSH agent/authorized_keys (no password prompt) |
    | --user | Remote SSH user (e.g. `admin`, `ubuntu`) |
    | --no-storage | Skip the storage sync and perform only the DB dump |
