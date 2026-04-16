@@ -38,6 +38,7 @@ Remote storage (SSH / scp; skipped if --no-storage):
   --user USER              Remote SSH user (e.g. ubuntu, root)
   --key PATH               Path to PEM private key for SSH
   --ssh-password PASS      SSH password (requires sshpass)
+  --ssh-port PORT          SSH port (default: 22)
   --no-password            Use SSH agent or passwordless authorized_keys
   --no-storage             Skip storage sync; database dump only
 
@@ -124,6 +125,7 @@ while [[ $# -gt 0 ]]; do
         --backup-dir) BACKUP_DESTINATION_DIR="$2"; shift 2 ;;
         --retention) MAX_BACKUPS_TO_KEEP="$2"; shift 2 ;;
         --remote-storage) REMOTE_STORAGE_PATH="$2"; shift 2 ;;
+        --ssh-port) SSH_PORT="$2"; shift 2 ;;
         --key)  PEM_KEY="$2"; shift 2 ;;
         --user) REMOTE_USER="$2"; shift 2 ;;
         --no-storage) SKIP_STORAGE=true; shift ;;
@@ -177,7 +179,12 @@ WORK="$BACKUP_DESTINATION_DIR/.work_${TIMESTAMP}"
 mkdir -p "$WORK"
 
 # 5. Storage sync (uncompressed tree under WORK/storage/)
-SSH_OPTS="-o BatchMode=no -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+if [ -n "$SSH_PORT" ]; then
+    SSH_PORT_ARG="-P $SSH_PORT"
+else
+    SSH_PORT_ARG=""
+fi
+SSH_OPTS="$SSH_PORT_ARG -o BatchMode=no -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
 
 
 if [ "$SKIP_STORAGE" != true ]; then
