@@ -34,6 +34,9 @@ A lightweight Bash script designed to connect to a remote database server via an
    REMOTE_USER="ubuntu"
    REMOTE_STORAGE_PATH="/var/www/app/storage"
    # SSH_HOST="your-remote-host" # Optional: Use only if you need to use a different host than the default
+   # SSH_PASSWORD="" # Optional: Use only if PEM_KEY is not available
+   # SSH_PORT="23" # Optional: Use only if you need to use a different port than 22
+   # NO_PASSWORD=false # Optional: Use true if connecting via SSH Agent
    PEM_KEY="/path/to/your/pem/key"
 
    # Local Destination & Retention
