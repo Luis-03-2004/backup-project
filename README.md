@@ -33,6 +33,10 @@ A lightweight Bash script designed to connect to a remote database server via an
    # Remote SSH Configuration (for storage sync)
    REMOTE_USER="ubuntu"
    REMOTE_STORAGE_PATH="/var/www/app/storage"
+   # SSH_HOST="your-remote-host" # Optional: Use only if you need to use a different host than the default
+   # SSH_PASSWORD="" # Optional: Use only if PEM_KEY is not available
+   # SSH_PORT="23" # Optional: Use only if you need to use a different port than 22
+   # NO_PASSWORD=false # Optional: Use true if connecting via SSH Agent
    PEM_KEY="/path/to/your/pem/key"
 
    # Local Destination & Retention
@@ -57,6 +61,7 @@ A lightweight Bash script designed to connect to a remote database server via an
    | --retention | Number of backups to keep |
    | --remote-storage | Absolute path to the remote storage folder |
    | --key | Path to your `.pem` private key |
+   | --ssh-host | Remote SSH host (default: --db-host) |
    | --ssh-password | SSH password used with `sshpass` authentication |
    | --ssh-port | SSH port (default: 22) |
    | --no-password | Use SSH agent/authorized_keys (no password prompt) |

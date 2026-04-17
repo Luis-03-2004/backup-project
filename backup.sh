@@ -41,6 +41,7 @@ Remote storage (SSH / scp; skipped if --no-storage):
   --ssh-port PORT          SSH port (default: 22)
   --no-password            Use SSH agent or passwordless authorized_keys
   --no-storage             Skip storage sync; database dump only
+  --ssh-host HOST          Remote SSH host (default: $DB_HOST)
 
 Other:
   --help, -h               Show this help and exit
@@ -67,16 +68,16 @@ run_storage_scp() {
     if [ -n "$PEM_KEY" ] && [ -f "$PEM_KEY" ]; then
         echo "Using PEM Key for authentication."
         scp -r $SSH_OPTS -i "$PEM_KEY" \
-            "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
+            "$REMOTE_USER@$SSH_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
     elif [ "$NO_PASSWORD" = true ]; then
         echo "Attempting connection without password (NO_PASSWORD mode)."
         scp -r $SSH_OPTS \
-            "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
+            "$REMOTE_USER@$SSH_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
     elif [ -n "$SSH_PASSWORD" ]; then
         if command -v sshpass >/dev/null 2>&1; then
             echo "Using password authentication via sshpass."
             SSHPASS="$SSH_PASSWORD" sshpass -e scp -r $SSH_OPTS \
-                "$REMOTE_USER@$DB_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
+                "$REMOTE_USER@$SSH_HOST:$REMOTE_STORAGE_PATH" "$dest_dir"
         else
             echo "Error: 'sshpass' is not installed, but password auth was requested."
             echo "Provide one of the options below:"
@@ -131,6 +132,7 @@ while [[ $# -gt 0 ]]; do
         --no-storage) SKIP_STORAGE=true; shift ;;
         --ssh-password) SSH_PASSWORD="$2"; shift 2 ;;
         --no-password) NO_PASSWORD=true; shift ;;
+        --ssh-host) SSH_HOST="$2"; shift 2 ;;
         *) fail_unknown_cli_arg "$1" ;;
     esac
 done
@@ -179,6 +181,10 @@ WORK="$BACKUP_DESTINATION_DIR/.work_${TIMESTAMP}"
 mkdir -p "$WORK"
 
 # 5. Storage sync (uncompressed tree under WORK/storage/)
+if [ -z "$SSH_HOST" ]; then
+    SSH_HOST="$DB_HOST"
+fi
+
 if [ -n "$SSH_PORT" ]; then
     SSH_PORT_ARG="-P $SSH_PORT"
 else
